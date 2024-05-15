@@ -1,0 +1,108 @@
+#!/usr/bin/env python3
+#
+# Copyright (C) 2023 Jonathan A. Poritz
+# 
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+# 
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+#
+import argparse
+import fileinput
+import time
+import os
+import sys
+import warnings
+import urllib.parse
+from bs4 import BeautifulSoup
+if not sys.warnoptions:
+    warnings.simplefilter("ignore")
+parser = argparse.ArgumentParser(description='Generates images html file, as well as corresponding docx file for uploading to PB, based on an html file (typically after that file has been downloaded from PB and OOprep-ed)')
+parser.add_argument("input_file", help='Source html file')
+parser.add_argument("-l", "--logfile", help='Filename for logfile to which will be appended detailed progress information; default is "img_list.log".', default="img_list.log", type=argparse.FileType('a'))
+parser.add_argument('-v', '--verbose', help="print on console all information also going in to the logfile", action='store_true')
+parser.add_argument("-o", "--output", help='Name to use as base of output file (before the ".html" and ".docx"). If absent, will be "imgs_from_" prepended to input file name (after any ".html", if present, is removed).', default="")
+args = parser.parse_args()
+verbose = args.verbose
+input_file = args.input_file
+if input_file[-5:]==".html":
+  infi_base=input_file[:-5]
+else:
+  infi_base=input_file
+output = args.output
+args.logfile.write("------------------------------------\n")
+def log_and_print(s):
+  t=time.strftime('%H:%M:%S')+" "+s
+  args.logfile.write(t+"\n")
+  if verbose:
+    print(t)
+log_and_print("On "+time.strftime('%d/%m/%Y')+", doing ")
+log_and_print(' '.join(sys.argv)+" in directory "+os.getcwd())
+in_fh = open(input_file,'r')
+soup = BeautifulSoup(in_fh)
+BS_all_imgs = soup.find_all("img")
+if not BS_all_imgs:
+  log_and_print(f"No images found in {input_file}, so no output generated!!")
+else:
+  if output:
+    out_fn_base = output
+  else:
+    [dir,fn] = os.path.split(infi_base)
+    if dir:
+      dir += "/"
+    out_fn_base = dir+'imgs_from_'+fn
+  html_out_fh = open(out_fn_base+".html","w")
+  html_out_fh.write(
+f'''<!DOCTYPE html>
+<html>
+<head>
+<meta content="text/html; charset=utf-8" http-equiv="content-type">
+<title>Image Loader</title>
+</head>
+<body>
+<h1>Image Loader</h1>
+''')
+  image_count = 0
+  srcs = 0
+  empty_srcs = 0
+  alts = 0
+  empty_alts = 0
+  for x in soup.find_all("img"):
+    image_count += 1
+    html_out_fh.write(
+f'''<p>
+  {str(x)}
+</p>
+''')
+    if x.get('src'):
+      srcs += 1
+      if not x['src']:
+        empty_srcs += 1
+    if x.get('alt'):
+      alts += 1
+      if not x['alt']:
+        empty_alts += 1
+  html_out_fh.write("</body>\n</html>\n")
+  html_out_fh.close()
+  report1 = f'''
+Got {image_count} image{(image_count>1)*"s"} in which there were:
+  {srcs} "src"{(srcs!=1)*"s"}
+  {empty_srcs} "src"{(srcs!=1)*"s"} that were present but empty strings
+  {alts} "alt"{(alts!=1)*"s"}
+  {empty_alts} "alt"{(empty_alts!=1)*"s"} that were present but empty strings'''
+  diff = image_count - alts + empty_alts
+  if diff>0:
+    report1 +=f'\nWARNING: {diff} "alt"{(diff!=1)*"s"} missing!'
+  log_and_print(report1)
+  pandoc_command = f'pandoc -o {out_fn_base+".docx"} {out_fn_base+".html"}'
+  os.system(pandoc_command)
+  report2 = f'Ran "{pandoc_command}"'
+  log_and_print(report2)
+log_and_print("Done (on "+time.strftime('%d/%m/%Y')+")!")
+args.logfile.write("------------------------------------\n")
+args.logfile.close()

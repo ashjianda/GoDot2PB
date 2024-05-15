@@ -1,0 +1,29 @@
+------------------------------------
+14:16:20 On 15/05/2024, doing 
+14:16:20 OOprep -v -b cX cY book.html in directory C:\Users\ashji\OneDrive\Desktop\VCU\Work Study\GD2PB\GoDot2P\Code
+14:16:20 Fixed
+0 blockquotes
+1 strongs
+0 emphases
+1 Google redirects
+0 <td>s with colspan=rowspan="1"
+0 style sections in img tags
+0 id sections in header tags
+0 id sections in p tags
+0 empty span tags
+0 empty header tags
+0 empty p tags
+20 unneeded '&nbsp;'s
+14:16:20 Ran PyTidyLib
+14:16:20 Did:  del C:\Users\ashji\AppData\Local\Temp\tmpux27n1a6
+14:16:20 Wrote
+  65 lines of output to tidy_book.html
+after discarding:
+  0 unneeded '&nbsp;'s
+  9 lines before the first '<h1>Chapter'
+and a trailing
+    </body>
+    </html>
+14:16:20 Did: del C:\Users\ashji\AppData\Local\Temp\tmp9g4031jd
+14:16:20 Done (on 15/05/2024)!
+------------------------------------

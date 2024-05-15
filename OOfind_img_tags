@@ -1,0 +1,230 @@
+#!/usr/bin/env python3
+#
+# Copyright (C) 2023 Jonathan A. Poritz
+# 
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+# 
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+#
+# importing
+#
+import argparse
+import warnings
+import fileinput
+import sys
+import os
+import re
+import time
+if not sys.warnoptions:
+    warnings.simplefilter("ignore")
+#
+# setting up arguments
+#
+parser = argparse.ArgumentParser(description='Makes a report on all <img> tags found in an html file such as one produced by OOprep subject to various selection criteria.')
+parser.add_argument("input_file", help="Source html file", type=argparse.FileType('r'))
+parser.add_argument("-l", "--logfile", help='Filename for logfile to which will be appended detailed progress information; default is "find_img_tags.log".', default="find_img_tags.log", type=argparse.FileType('a'))
+parser.add_argument('-v', '--verbose', help="print on console all information also going in to the logfile", action='store_true')
+parser.add_argument('-a', '--all_img_tags', help="find all lines with <img> tags", action='store_true')
+parser.add_argument('-b', '--bad_img_locations', help='find <img> tags which are not in the standard configuration of a line containing exactly "<p><img _options_></p>"', action='store_true')
+parser.add_argument('-c', '--captions', help='find lines with <img> tags which are not followed by a caption line beginning "<p>Figure X.Y" and caption lines of that format which are not preceded by a line with an <img> tag', action='store_true')
+parser.add_argument('-i', '--include_speech_balloons', help='include the normally ignored <img> tags with alt text that begins "Speech balloons"', action='store_true')
+parser.add_argument('-m', '--multiline', help='find lines with <img> tags which are in sequences of more than one line containting the <img> tag (Note: we assume "Speech balloon" alt texts never occur in multiline <img> tag blocks)', action='store_true')
+parser.add_argument('-n', '--numbers', help="print out the line numbers of the tags found", action='store_true')
+parser.add_argument('-s', '--show_tag_lines', help="print out the line(s) with those desired <img> tags", action='store_true')
+parser.add_argument('-t', '--timestamps', help="print timestamps of actions when reporting in logfile and/or on console", action='store_true')
+args = parser.parse_args()
+#
+# setting up logfile and logging helper
+#
+args.logfile.write("------------------------------------\n")
+def log_and_print(s):
+  if args.timestamps:
+    t=time.strftime('%H:%M:%S')+" "+s
+  else:
+    t=s
+  args.logfile.write(t+"\n")
+  if args.verbose:
+    print(t)
+log_and_print("On "+time.strftime('%d/%m/%Y')+", doing ")
+log_and_print(' '.join(sys.argv)+" in directory "+os.getcwd())
+#
+# get input file contents
+#
+book_lines = args.input_file.read().split("\n")
+#
+# set up some patterns we use
+#
+img_tag_pat = re.compile("<img([^>]*)>", re.IGNORECASE)
+speech_balloons_pat = re.compile('alt="Speech balloons')
+caption_pat = re.compile("<p>Figure [1-9][0-9]*\.[1-9][0-9]*")
+#
+# handle print-out of all lines with <img> tags
+#
+if args.all_img_tags:
+  lines_with_tags = 0
+  if args.numbers or args.show_tag_lines:
+    log_and_print("Here are all lines with <img> tags:")
+  line_no = 0
+  for l in book_lines:
+    line_no += 1
+    m = img_tag_pat.search(l)
+    if m and (args.include_speech_balloons or not speech_balloons_pat.search(m.group(1))):
+      lines_with_tags += 1
+      if args.numbers:
+        if args.show_tag_lines:
+          log_and_print(f'{line_no}: {l}')
+        else:
+          log_and_print(str(line_no))
+      elif args.show_tag_lines:
+        log_and_print(l)
+  if not lines_with_tags:
+    log_and_print('...\nThere were no lines with an <img> tag')
+  elif lines_with_tags == 1:
+    log_and_print('There was one line with an <img> tag')
+  else:
+    log_and_print(f'There were a total of {lines_with_tags} lines with <img> tags')
+#
+# handle print-out of lines with <img> tags in a bad location
+#
+if args.bad_img_locations:
+  lines_with_bl_tags = 0
+  if args.numbers or args.show_tag_lines:
+    log_and_print("Here are badly located <img> tags:")
+  line_no = 0
+  for l in book_lines:
+    line_no += 1
+    m = img_tag_pat.search(l)
+    if m and (m.start() != 3 or l[:3]!="<p>" or m.end() != len(l)-4 or l[m.end():] != "</p>"):
+      if not args.include_speech_balloons and speech_balloons_pat.search(m.group(1)):
+        continue
+      lines_with_bl_tags += 1
+      if args.numbers:
+        if args.show_tag_lines:
+          log_and_print(f'{line_no}: {l}')
+        else:
+          log_and_print(str(line_no))
+      elif args.show_tag_lines:
+        log_and_print(l)
+  if not lines_with_bl_tags:
+    log_and_print('...\nThere were no lines with a badly located <img> tag')
+  elif lines_with_bl_tags == 1:
+    log_and_print('There was one line with a badly located <img> tag')
+  else:
+    log_and_print(f'There were a total of {lines_with_bl_tags} lines with badly located <img> tags')
+#
+# handle print-out of lines with <img> tags not followed by caption lines
+#
+if args.captions:
+  lines_with_img_no_cap = 0
+  if args.numbers or args.show_tag_lines:
+    log_and_print("Here are lines with <img> tags not followed by a good caption line:")
+  last = book_lines[0]
+  line_no = 1
+  while line_no < len(book_lines):
+    mlast = img_tag_pat.search(last)
+    l = book_lines[line_no]
+    m = caption_pat.match(l)
+    if mlast and (args.include_speech_balloons or not speech_balloons_pat.search(mlast.group(1))) and not m:
+      lines_with_img_no_cap += 1
+      if args.numbers:
+        if args.show_tag_lines:
+          log_and_print(f'{line_no}: {last}\n{line_no+1}: {l}')
+        else:
+          log_and_print(f'{line_no}\n{line_no+1}')
+      elif args.show_tag_lines:
+        log_and_print(f'{last}\n{l}')
+    last = l
+    line_no += 1
+  if not lines_with_img_no_cap:
+    log_and_print('...\nThere were no lines with an <img> tag not followed by a reasonable caption line')
+  elif lines_with_img_no_cap == 1:
+    log_and_print('There was one line with an <img> tag but not followed by a reasonable caption line')
+  else:
+    log_and_print(f'There were a total of {lines_with_img_no_cap} lines with an <img> tag but not followed by a reasonable caption line')
+#
+# handle print-out of caption lines not following lines with <img> tags
+#
+  lines_with_cap_no_img = 0
+  if args.numbers or args.show_tag_lines:
+    log_and_print("Here are the good caption lines not following a line with an <img> tag:")
+  last = book_lines[0]
+  line_no = 1
+  while line_no < len(book_lines):
+    mlast = img_tag_pat.search(last)
+    l = book_lines[line_no]
+    m = caption_pat.match(l)
+    if m and not (mlast and (args.include_speech_balloons or not speech_balloons_pat.search(mlast.group(1)))):
+      lines_with_cap_no_img += 1
+      if args.numbers:
+        if args.show_tag_lines:
+          log_and_print(f'{line_no}: {last}\n{line_no+1}: {l}')
+        else:
+          log_and_print(f'{line_no}\n{line_no+1}')
+      elif args.show_tag_lines:
+        log_and_print(f'{last}\n{l}')
+    last = l
+    line_no += 1
+  if not lines_with_cap_no_img:
+    log_and_print('...\nThere were no captions lines which did not follow a line with an <img> tag')
+  elif lines_with_cap_no_img == 1:
+    log_and_print('There was one caption line which did not follow a line with an <img> tag')
+  else:
+    log_and_print(f'There were a total of {lines_with_cap_no_img} caption lines which did not follow a line with an <img> tag')
+#
+# handle blocks of multiple lines with <img> tags
+#
+if args.multiline:
+  multiline_groups = 0
+  last_had_img = False
+  in_ml_block = False
+  multilines = ''
+  line_no = 0
+  for l in book_lines:
+    line_no += 1
+    m = img_tag_pat.search(l)
+    if m:
+      if last_had_img:
+        in_ml_block = True
+        prefix="\n"
+      else:
+        in_nl_block = False
+        prefix=""
+      if args.numbers:
+        if args.show_tag_lines:
+          multilines += f'{prefix}{line_no}: {l}'
+        else:
+          multilines += f'{prefix}{line_no}'
+      elif args.show_tag_lines:
+        multilines += f'{prefix}{l}'
+      last_had_img = True
+    else:
+      if in_ml_block:
+        if not multiline_groups:
+          if args.numbers or args.show_tag_lines:
+            log_and_print("Here are multiline blocks with <img> tags:")
+        multiline_groups += 1
+        log_and_print(multilines)
+        multilines = ''
+      last_had_img = False
+      in_ml_block = False
+  if in_ml_block:
+    multiline_groups += 1
+    log_and_print(multilines)
+  if not multiline_groups:
+    log_and_print('...\nThere were no groups of multiple lines with <img> tags')
+  if multiline_groups == 1:
+    log_and_print('There was one group of multiple lines with <img> tags')
+  else:
+    log_and_print(f'There were a total of {multiline_groups} groups of multiple lines with <img> tags')
+#
+# close up and go home
+#
+log_and_print("Done (on "+time.strftime('%d/%m/%Y')+")!")
+args.logfile.write("------------------------------------\n")
+args.logfile.close()

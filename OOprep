@@ -1,0 +1,315 @@
+#!/usr/bin/env python3
+#
+# Copyright (C) 2023 Jonathan A. Poritz
+# 
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+# 
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+#
+# importing
+#
+import argparse
+import warnings
+import fileinput
+import sys
+import os
+import re
+import time
+import uuid
+import urllib.parse
+import bs4
+import tempfile
+import html
+from tidylib import tidy_document
+import tidylib
+
+if not sys.warnoptions:
+    warnings.simplefilter("ignore")
+#
+# setting up arguments
+#
+parser = argparse.ArgumentParser(description='Does some preliminary preparation of a GD html file using Beatiful Soup, including dealing with the google.com redicts, <td>s with colspan=rowspan="1", img styles, empty spans and headers, GD classes which need to be converted to "<em>" and to "<strong>", all lines before the first "<h1>Chapter", the trailing </body></html>, and optionally handling <blockquote>s. Also uses the W3C\'s "tidy" program to clean up the HTML.')
+parser.add_argument("input_file", help="Source html file")
+parser.add_argument("-l", "--logfile", help='Filename for logfile to which will be appended detailed progress information; default is "prep.log".', default="prep.log", type=argparse.FileType('a'))
+parser.add_argument('-v', '--verbose', help="print on console all information also going in to the logfile", action='store_true')
+parser.add_argument("-o", "--output", help='Name to use as output file. If absent, will be "tidy_" prepended to input file name.', default="")
+parser.add_argument("-b", "--blockquote", help="GD classes which identify a blockquote; if not specified, will do no blockquote substitution", default="")
+args = parser.parse_args()
+#
+# setting up logfile and logging helper
+#
+args.logfile.write("------------------------------------\n")
+def log_and_print(s):
+  t=time.strftime('%H:%M:%S')+" "+s
+  args.logfile.write(t+"\n")
+  if args.verbose:
+    print(t)
+log_and_print("On "+time.strftime('%d/%m/%Y')+", doing ")
+log_and_print(' '.join(sys.argv)+" in directory "+os.getcwd())
+#
+# initializing counts of found objects
+#
+blockquotes = 0
+emphasises = 0
+strongs = 0
+google_redirects = 0
+crspans = 0
+imgstyles = 0
+head_ids = 0
+empty_heads = 0
+para_ids = 0
+empty_paras = 0
+empty_spans = 0
+nbsp = 0
+#
+# get input file contents for handling a few special GD classes -> HTML and
+#  to import into BeautifulSoup for parsing
+#
+with open(args.input_file,'r') as in_fh:
+  gd_book=in_fh.read()
+  soup = bs4.BeautifulSoup(gd_book)
+#
+# handle a few special HTML types that GD does with classes
+#
+headers = ['h1', 'h2', 'h3', 'h4', 'h5']
+em_pat = re.compile(r"\.(c[0-9]*){font-style:italic}")
+em_match = em_pat.search(gd_book)
+if em_match:
+  em_class = em_match.group(1)
+  for x in soup.find_all("span",class_=em_class):
+    if x.parent.name in headers:
+      continue
+    emphasises += 1
+    x.name = "em"
+    del x['class']
+strong_pat = re.compile(r"\.(c[0-9]*){font-weight:700}")
+strong_match = strong_pat.search(gd_book)
+if strong_match:
+  strong_class = strong_match.group(1)
+  for x in soup.find_all("span",class_=strong_class):
+    if x.parent.name in headers:
+      continue
+    strongs += 1
+    x.name = "strong"
+    del x['class']
+if args.blockquote:
+  for x in soup.find_all("p",class_=args.blockquote):
+    blockquotes += 1
+    x.name = "blockquote"
+    del x['class']
+#
+# remove the links whose text is just an &nbsp; annoying redirects Google inserts in all links in GDs
+#
+nbspspat=re.compile(r"(&nbsp;)*$")
+spacespat=re.compile(r"(\xa0)*$")
+for x in soup.find_all("a"):
+  if len(x.contents)==1 and isinstance(x.contents[0],bs4.NavigableString) and (nbspspat.match(x.contents[0]) or spacespat.match(x.contents[0])):
+    x.replace_with(bs4.NavigableString(" "))
+    continue
+  if x.get('href') and "https://www.google.com/url?q=" in x.get('href'):
+    google_redirects += 1
+    href = urllib.parse.unquote(x['href'].replace("https://www.google.com/url?q=",""))
+    if "&sa" in href:
+      href=href[:href.index("&sa")]
+    if "&amp;sa" in href:
+      href=href[:href.index("&amp;sa")]
+    x['href'] = href
+#
+# deal with weird way GD handles table cells
+#
+for x in soup.find_all("td"):
+  del x['id']
+  if x.get('colspan') and x.get('rowspan') and x['colspan']=="1" and x['rowspan']=="1":
+    crspans += 1
+    del x['colspan']
+    del x['rowspan']
+#
+# deal with weird way GD handles img tags
+#
+for x in soup.find_all("img"):
+  if x.get('style'):
+    del x['style']
+    imgstyles += 1
+#
+# remove spurious empty span tag pairs that seem to be all over in GDs
+#
+for x in soup.find_all("span"):
+  if not x.contents:
+    empty_spans += 1
+    x.decompose()
+#
+# remove id declarations which GD adds to headers .. might be an issue for
+#   internal links?
+#
+for x in soup.find_all(headers):
+  if x.get('id'):
+    del x['id']
+    head_ids += 1
+  if not x.contents:
+    empty_heads += 1
+    x.decompose()
+#
+# remove id declarations which GD adds to <p>s .. might be an issue for
+#   internal links?
+#
+for x in soup.find_all("p"):
+  if x.get('id'):
+    del x['id']
+    para_ids += 1
+  if not x.contents:
+    empty_paras += 1
+    x.decompose()
+
+#
+# remove nbsp from line
+#
+for x in soup.find_all(text=True):
+  x.replace_with(x.replace("\xa0", ""))
+  nbsp += 1
+
+for i in soup.contents:
+  print(i)
+#
+# summarize basic cleanup work done
+#
+log_and_print(f'''Fixed
+{blockquotes} blockquotes
+{strongs} strongs
+{emphasises} emphases
+{google_redirects} Google redirects
+{crspans} <td>s with colspan=rowspan="1"
+{imgstyles} style sections in img tags
+{head_ids} id sections in header tags
+{para_ids} id sections in p tags
+{empty_spans} empty span tags
+{empty_heads} empty header tags
+{empty_paras} empty p tags
+{nbsp} unneeded '&nbsp;'s''')
+#
+# write the improved HTML to a temporary file, apply the W3C tidy command,
+#   putting result in another temp file, remove first temp file
+# LINUX WARNING: temp file work and tidy command usage assume we're on Linux!
+#   could use OS-independent tools for temp files (such as tempfile.py) and
+#   PyTidyLib instead of command-line tidy, to generalize from Linux
+#
+# temp1_fn="/tmp/"+str(uuid.uuid4())
+# with open(temp1_fn,"w") as temp1_fh:
+#  temp1_fh.write(str(soup))
+# temp2_fn="/tmp/"+str(uuid.uuid4())
+# tidy_command = 'tidy -g -q -o '+temp2_fn+' -w 0 '+temp1_fn+" 2> /dev/null"
+# os.system(tidy_command)
+# log_and_print(f'Ran: {tidy_command}')
+# os.remove(temp1_fn)
+# log_and_print(f'Did:  del {temp1_fn}')
+# Instead of these lines:
+# temp1_fn = "/tmp/" + str(uuid.uuid4())
+# temp2_fn = "/tmp/" + str(uuid.uuid4())
+
+with tempfile.NamedTemporaryFile(mode='w+', delete=False) as temp1_fh:
+    temp1_fn = temp1_fh.name
+    temp1_fh.write(str(soup))
+    temp1_fh.seek(0)
+    temp1_contents = temp1_fh.read()
+
+with tempfile.NamedTemporaryFile(mode='w', delete=False) as temp2_fh:
+    temp2_fn = temp2_fh.name
+    temp2_fh.write(temp1_contents)
+
+with open(temp1_fn, 'rb') as temp1_fh:
+    document, errors = tidy_document(temp1_fh.read())
+
+with open(temp2_fn, 'wb') as temp2_fh:
+    temp2_fh.write(document)
+    
+#with open(temp2_fn, 'rb') as temp2_fh:
+#    print(temp2_fh.read().decode())
+  
+log_and_print(f'Ran PyTidyLib')
+os.remove(temp1_fn)
+log_and_print(f'Did:  del {temp1_fn}')
+#
+# build output filename either as specified or from input filename
+#   should be OS indpendent
+#
+if args.output:
+  out_fn = args.output
+else:
+  [dir,fn] = os.path.split(args.input_file)
+  out_fn = os.path.join(dir,'tidy_'+fn)
+#
+# getting ready to process mostly cleaned-up HTML from temp file 2
+#
+middle_nbsp_pattern=re.compile(r'([a-zA-Z.!?])&nbsp;([a-zA-Z.!?])')
+nbsp_end_p_pattern=re.compile(r' *(&nbsp;)+ *</p>')
+a_nbsp_pattern=re.compile(r'</a> *&nbsp; *')
+nbsp_a_pattern=re.compile(r' *&nbsp; *<a ')
+discarding_preamble = True
+preamble_line = 0
+body_line = 0
+extra_nbsps = 0
+found_end_body = False
+found_end_html = False
+
+#
+# looping through the partially cleaned-up HTML temp file (output of tidy) to
+#   do so hands-on removal of &nbsp;s and preamble (everything before first
+#   occurrance of "<h1>Chapter" at the beginning of a line), putting results
+#   into sepcified ouput file
+#
+
+...
+with open(temp2_fn,'r') as temp2_fh, open(out_fn, 'w') as out_fh:
+  for line in temp2_fh:
+    if found_end_html:
+      raise ValueError("1: malformed HTML file: tail is something other than just\n  </body>\n  </html>")
+    if found_end_body:
+      if line.strip() != "</html>":
+        raise ValueError("2: malformed HTML file: tail is something other than just\n  </body>\n  </html>")
+      found_end_html = True
+      continue
+    if middle_nbsp_pattern.search(line):
+      extra_nbsps += 1
+      line=middle_nbsp_pattern.sub(r'\1 \2',line)
+    if nbsp_end_p_pattern.search(line):
+      extra_nbsps += 1
+      line=nbsp_end_p_pattern.sub(r'</p>',line)
+    if a_nbsp_pattern.search(line):
+      extra_nbsps += 1
+      line=a_nbsp_pattern.sub(r'</a> ',line)
+    if nbsp_a_pattern.search(line):
+      extra_nbsps += 1
+      line=nbsp_a_pattern.sub(r' <a ',line)
+    if discarding_preamble and not line.strip().startswith("<body"):
+      preamble_line += 1
+      continue
+    discarding_preamble = False
+    if line.strip() == "</body>":
+      found_end_body = True
+      continue
+    line = html.unescape(line)
+    out_fh.write(line)
+    body_line += 1
+  if not (found_end_html or found_end_body):
+    raise ValueError("3: malformed HTML file: tail is something other than just\n  </body>\n  </html>")
+#
+# summarize last cleanup work done and output file writing
+#
+log_and_print(f'''Wrote
+  {str(body_line)} lines of output to {out_fn}
+after discarding:
+  {str(extra_nbsps)} unneeded '&nbsp;'s
+  {str(preamble_line)} lines before the first '<h1>Chapter'
+and a trailing
+    </body>
+    </html>''')
+os.remove(temp2_fn)
+log_and_print(f'Did: del {temp2_fn}')
+log_and_print("Done (on "+time.strftime('%d/%m/%Y')+")!")
+args.logfile.write("------------------------------------\n")
+args.logfile.close()

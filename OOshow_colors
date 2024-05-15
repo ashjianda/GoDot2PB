@@ -1,0 +1,73 @@
+#!/usr/bin/env python3
+#
+# Copyright (C) 2023 Jonathan A. Poritz
+# 
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+# 
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+#
+import argparse
+import re
+import sys
+import warnings
+if not sys.warnoptions:
+    warnings.simplefilter("ignore")
+#
+# setting up arguments
+#
+parser = argparse.ArgumentParser(description='Shows class names and corresponding colors for GD HTML color-designating class from an html file such as the "book.html" from unzipping a GD ".html, zipped" download; ignores black')
+parser.add_argument("inputfile", help="File containing html from which to extract color class info", type=argparse.FileType('r'))
+#
+# define helper functions and regular expressions
+#
+def color_escape(r, g, b):
+  return '\033[{};2;{};{};{}m'.format(38, r, g, b)
+classdefpat=re.compile(r'\.c[1-9][0-9]?[0-9]?\{[^\}]*color:#[^\}]*\}')
+colorclasspat=re.compile(r'[\{,;]color:#')
+colorpat=re.compile("color:#([0-9abcdefABCDEF]{6,6});?")
+classpat=re.compile("\.(c[1-9][0-9]?[0-9]?){")
+#
+# read file contents
+#
+book=parser.parse_args().inputfile.read()
+#
+# find all class definitions
+#
+classdefs=classdefpat.findall(book)
+#
+# exclude class defs without color def
+#
+colorclasses=[]
+for s in classdefs:
+  if not colorclasspat.search(s):
+    continue
+  colorclasses.append(s)
+#
+# exclude those whose color is black
+#
+notblackcolorclasses=[]
+for s in colorclasses:
+  if s.count("color:#000000"):
+    continue
+  notblackcolorclasses.append(s)
+#
+# display appropriate infor for remaining color-defining class defs
+#
+for s in notblackcolorclasses:
+  for t in colorpat.finditer(s):
+    g=t.group(1)
+    red=int(g[0:2],16)
+    green=int(g[2:4],16)
+    blue=int(g[4:6],16)
+    classname=classpat.search(s).group(1)
+    print(classname+": "+" "*(4-len(classname))+color_escape(red, green, blue) + '\x1b[48;2;255;255;255m' + " ■■■■■■ "+g+" " + '\033[0m')
+    xtrastyle=colorpat.sub("",classpat.sub("",s))[:-1]
+    if len(xtrastyle):
+      print("extra styling: "+xtrastyle)
+    print("")

@@ -1,0 +1,95 @@
+These directions are for Linux
+
+Below:
+  "GD"="Google Docs"
+  "PB"="Pressbooks"
+
+Download GD file by
+  File > Download > Web Page (.html, zipped)
+let's say into an otherwise empty directory "work," where we will assume you
+are now working.
+
+Do:
+% unzip *.zip
+% mv *.html book.html
+
+Look for a blockquote in the GD, find the corresponding text in book.html .
+It will be enclosed in a <span> ... </span>, which will have two classes,
+say cX and cY.
+
+Do:
+% /path/OOprep -v -b "cX cY" book.html
+
+Run that way, the output will be in "tidy_book.html."
+
+Next: some work on fixing up the html file, partly by hand, partly with tools.
+Start with:
+
+% /path/OOoutliner -n -t tidy_book.html | less
+
+There should be no improperly nested headers (OOoutline will warn about them)
+
+All h1 tags should have the form "<h1>Chapter <number>: <chapter title></h1>"
+
+There should be no <img> tags in headers.
+
+Probably no &nbsp; in headers.
+
+Look in tidy_book.html and look at nested <ol>s, GD handles this weirdly
+
+Check for extra <br>s -- some for fake blockquotes, some before </li>
+
+Probabaly remove <hr>s
+
+Look at tables (with table material -- not those used to make a box around text)
+and make sure there is a11y awareness, such as cells with <th> instead of <td>.
+
+% /path/OOimg_list -v -o imgs tidy_book.html
+
+Import imgs.docx into PB book
+
+If it's bigger than 25MG, break into pieces each smaller than 25MB, do them one
+at a time, put the whole thing back together afterwards.
+Visit the new section in PB text editor, copy all html from there into a file
+pb_imgs.html on the linux box.
+
+% /path/OOsplit.py -v tidy_book.html
+
+In PB Theme Options make sure
+  Part and Chapter numbers  [ ] Display part and chapter numbers
+    is *unchecked* and
+  Two-Level TOC  [*] Enable two-level table of contents (displays headings under chapter titles)
+    is *checked*
+  
+  Examples
+  Header Color	#fff
+  Examples Header Background	#4f446d
+  Examples Background	#ede5f9
+ *this is the one that needs to be changed!*
+
+Text for Book Info - About the Book - Short Description
+
+    This open textbook is a pre-publication edition that we are piloting for the first time, so it may contain inconsistencies or errors. If you encounter an accessibility issue, please let your instructor know right away. Based on student and instructor feedback, a revised version will be released in Spring 2024.
+
+Add author, contributors.
+Make cover (background color: #002a86)
+
+Copy stable directory in current working directory.
+
+% mv stable/credentials .
+
+Edit credentials to put in correct value for PB <root>
+Edit stable/About_this_book.html to replace BOOKTITLE with the actual book title
+
+Fix the form link and add 'target="_blank"' to all Chapter N Feedback Survey's
+
+consider doing
+
+% /path/OOfix_links.py -v -b OOhtml/manifest
+
+and
+
+% /path/OOfix_in_focus.py -v -b OOhtml/manifest
+
+
+% /path/OOupload.py OOhtml/manifest

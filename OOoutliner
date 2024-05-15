@@ -1,0 +1,184 @@
+#!/usr/bin/env python3
+#
+# Copyright (C) 2023 Jonathan A. Poritz
+# 
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+# 
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+#
+import argparse
+import re
+import sys
+import warnings
+if not sys.warnoptions:
+    warnings.simplefilter("ignore")
+#
+# setting up arguments
+#
+parser = argparse.ArgumentParser(description='Prints layers of headings from an html file such as the "tidy_book.html" produced by OOprep')
+parser.add_argument("inputfile", help="File containing html from which to extract outline information.", type=argparse.FileType('r'))
+parser.add_argument('-c', '--chapter_nos', help='chapters have numbers, which are used in building the outline numbering', action='store_true')
+parser.add_argument('-n', '--numbering', help='print also chapter/section/sub... numbering as it should be', action='store_true')
+parser.add_argument('-d', '--dividers', help='print horizontal dividers between blocks at different levels', action='store_true')
+parser.add_argument('-t', '--tags', help='print header tags as in the html file', action='store_true')
+args = parser.parse_args()
+#
+# initializing counts of found objects, helpers for output
+#
+line_no = 0
+chap_no = 0
+sec_no = 0
+ssec_no = 0
+sssec_no = 0
+ssssec_no = 0
+nesting_warnings = 0
+tag_warnings = 0
+last_level = 0
+if args.numbering:
+  spaces = 3
+else:
+  spaces = 2
+def warn(s):
+  print(f'WARNING: on line {line_no}, with content\n{l}\n{s}')
+#
+# looping through input file, keeping track of lines which start and end with
+#  <h{1-5]> and </h[1-5]>, also checks for improper levels of heading levels
+#
+for line in args.inputfile:
+  line_no += 1
+  l = line.strip()
+  if l[:4]=="<h1>":
+    if l[-5:]!="</h1>":
+      warn("expecting entire line bracketed in <h1>..</h1>")
+      if args.tags:
+        l = l[4:]
+    elif not args.tags:
+      l = l[4:-5]
+    if last_level != 1 and args.dividers:
+      print("-"*80)
+    last_level = 1
+    if args.chapter_nos:
+      num = l.split()[1]
+      if num[-1] == ":":
+        num = num[:-1]
+      chap_no = int(num)
+    else:
+      chap_no += 1
+    sec_no = 0
+    ssec_no = 0
+    sssec_no = 0
+    ssssec_no = 0
+    if args.numbering:
+      print(f'{chap_no:2} {l}')
+    else:
+      print(l)
+    continue
+  if l[:4]=="<h2>":
+    if l[-5:]!="</h2>":
+      warn("expecting entire line bracketed in <h2>..</h2>")
+      if args.tags:
+        l = l[4:]
+    elif not args.tags:
+      l = l[4:-5]
+    if last_level != 2 and args.dividers:
+      print(" "*spaces + "-"*(77-spaces))
+    last_level = 2
+    if chap_no == 0:
+      nesting_warnings += 1
+      warn("Section without enclosing chapter")
+    sec_no += 1
+    ssec_no = 0
+    sssec_no = 0
+    ssssec_no = 0
+    if args.numbering:
+      print(f'{chap_no:2}.{sec_no:2} {l}')
+    else:
+      print("  "+l)
+    continue
+  if l[:4]=="<h3>":
+    if l[-5:]!="</h3>":
+      warn("expecting entire line bracketed in <h3>..</h3>")
+      if args.tags:
+        l = l[4:]
+    elif not args.tags:
+      l = l[4:-5]
+    if last_level != 3 and args.dividers:
+      print(" "*spaces*2 + "-"*(77-spaces*2))
+    last_level = 3
+    if sec_no == 0:
+      nesting_warnings += 1
+      if chap_no == 0:
+        warn("Subsection without enclosing chapter or section")
+      else:
+        warn("Subsection without enclosing section")
+    ssec_no += 1
+    sssec_no = 0
+    ssssec_no = 0
+    if args.numbering:
+      print(f'{chap_no:2}.{sec_no:2}.{ssec_no:2} {l}')
+    else:
+      print("    "+l)
+    continue
+  if l[:4]=="<h4>":
+    if l[-5:]!="</h4>":
+      warn("expecting entire line bracketed in <h4>..</h4>")
+      if args.tags:
+        l = l[4:]
+    elif not args.tags:
+      l = l[4:-5]
+    if last_level != 4 and args.dividers:
+      print(" "*spaces*3 + "-"*(77-spaces*3))
+    last_level = 4
+    if ssec_no ==0:
+      nesting_warnings += 1
+      if sec_no == 0:
+        if chap_no == 0:
+          warn("Subsubsection without enclosing chapter, section, or subsection")
+        else:
+          warn("Subsubsection without enclosing section or subsection")
+      else:
+        warn("Subsubsection without enclosing subsection")
+    sssec_no += 1
+    ssssec_no = 0
+    if args.numbering:
+      print(f'{chap_no:2}.{sec_no:2}.{ssec_no:2}.{sssec_no:2} {l}')
+    else:
+      print("      "+l)
+    continue
+  if l[:4]=="<h5>":
+    if l[-5:]!="</h5>":
+      warn("expecting entire line bracketed in <h5>..</h5>")
+      if args.tags:
+        l = l[4:]
+    elif not args.tags:
+      l = l[4:-5]
+    if last_level != 5 and args.dividers:
+      print(" "*spaces*4 + "-"*(77-spaces*4))
+    last_level = 5
+    if sssec_no == 0:
+      nesting_warnings += 1
+      if ssec_no == 0:
+        if sec_no == 0:
+          if chap_no == 0:
+            warn("Subsubsubsection without enclosing chapter, section, subsection, or subsubsection")
+          else:
+            warn("Subsubsubsection without enclosing section, subsection, or subsubsection")
+        else:
+          warn("Subsubsubsection without enclosing subsection or subsubsection")
+      else:
+        warn("Subsubsubsection without enclosing subsubsection")
+    ssssec_no += 1
+    if args.numbering:
+      print(f'{chap_no:2}.{sec_no:2}.{ssec_no:2}.{sssec_no:2}.{ssssec_no:2} {l}')
+    else:
+      print("       "+l)
+if nesting_warnings >1:
+  print(f"Note: there were {nesting_warnings} improperly nested section warnings")
+if nesting_warnings == 1:
+  print(f"Note: there was an improperly nested section warning")

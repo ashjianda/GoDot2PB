@@ -1,0 +1,476 @@
+#!/usr/bin/env python3
+#
+# Copyright (C) 2023 Jonathan A. Poritz
+# 
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+# 
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+#
+#
+# setting up arguments
+#
+import argparse
+from bs4 import BeautifulSoup
+import csv
+import os
+import re
+import sys
+import time
+import code
+import warnings
+if not sys.warnoptions:
+    warnings.simplefilter("ignore")
+parser = argparse.ArgumentParser(description='Finds the figures from an html file such as the "tidy_book.html" produced by OOprep.py, putting information into a CSV file')
+parser.add_argument("inputfile", help="File containing html from which to extract outline information.")
+parser.add_argument("-l", "--logfile", help='Filename for logfile to which will be appended detailed progress information; default is "fig_finder.log".', default="fig_finder.log", type=argparse.FileType('a'))
+parser.add_argument('-v', '--verbose', help="print on console all information also going in to the logfile", action='store_true')
+parser.add_argument("-o", "--output", help='Name to use as base of output file (before the ".csv"). If absent, will be "figures_from_" prepended to input file name (after any ".html", if present, is removed).', default="")
+parser.add_argument('-n', '--numbered_chapters', help='chapters have numbers, which are used in building the outline numbering', action='store_true')
+parser.add_argument('-c', '--context', help='in the HTML file with all figures, include a paragraph before and after the figure, to ', action='store_true')
+parser.add_argument('-M', '--Max_chap_no', help='maximum chapter number in this book, default is 15', type=int, default=15)
+parser.add_argument('-m', '--max_fig_no', help='maximum figure number in any chapter of this book, default is 30', type=int, default=30)
+parser.add_argument('-a', '--allow_subfig_letters', help='allow figures to have alphbetic subfig suffices, such as "Figure 1.2a", max such being "h"', action='store_true')
+args = parser.parse_args()
+#
+# setting up logfile and logging helper
+#
+args.logfile.write("------------------------------------\n")
+def log_and_print(s):
+  t=time.strftime('%H:%M:%S')+" "+s
+  args.logfile.write(t+"\n")
+  if args.verbose:
+    print(t)
+#
+# declare what we are doing here
+#
+when_work = "On "+time.strftime('%d/%m/%Y')
+log_and_print(when_work+", doing ")
+what_work = ' '.join(sys.argv)+" in directory "+os.getcwd()
+log_and_print(what_work)
+#
+# get input file contents
+#
+inputfile = args.inputfile
+with open(inputfile,'r') as in_fh:
+  book_lines = in_fh.read().split("\n")
+#
+# prepare HTML output filename
+#
+if inputfile[-5:]==".html":
+  infi_base=inputfile[:-5]
+else:
+  infi_base=inputfile
+if args.output:
+  out_fn_base = args.output
+else:
+  [dir,fn] = os.path.split(infi_base)
+  if dir:
+    dir += "/"
+  out_fn_base = dir+'figures_from_'+fn
+#
+# open HTML output file, main processing
+#
+with open(out_fn_base+".html","w") as html_out:
+  #
+  # put HTML header in output HTML file
+  #
+  html_out.write(f'''<!DOCTYPE html>
+<html>
+<head>
+<meta content="text/html; charset=utf-8" http-equiv="content-type">
+<title>Figures</title>
+</head>
+<body>
+<h1>Figures</h1>
+''')
+  #
+  # first we discard things that seem like captions but are in Licensing and
+  # attribution sections, by over-writing such sections with
+  #  "<p>license/attribution info</p>"
+  #
+  line_no = -1
+  h123_pat = re.compile("<h[1-3]>")
+  while True:
+    line_no += 1
+    if line_no>=len(book_lines):
+      break
+    # captions are <h3>'s with "Licensing and Attributions" in the line
+    if book_lines[line_no][:4] == "<h3>" and "Licenses and Attributions" in book_lines[line_no]:
+      line_no += 1
+      if "<table>" in book_lines[line_no]:
+        line_no += 1
+      while line_no<len(book_lines):
+        # overwrite until the next <h1>, <h2>, <h3>, or </table> or we run
+        # out of lines
+        if h123_pat.match(book_lines[line_no]) or ("</table>" in book_lines[line_no]):
+          line_no -= 1
+          break
+        book_lines[line_no] = "<p>license/attribution info</p>"
+        line_no += 1
+  #
+  # now we're going to go through the whole book and associate its line numbers
+  # with the name of their enclosing chapter, section, subsection,
+  # subsubsection, etc., so that the output info about figures can refer to
+  # that structural infoa bout each figure
+  #
+  locations = []
+  chap_no = 0
+  sec_no = 0
+  ssec_no = 0
+  sssec_no = 0
+  ssssec_no = 0
+  nesting_warnings = 0
+  this_location = ""
+  ol_lvl = 0
+  ul_lvl = 0
+  table_lvl = 0
+  headerpat = re.compile("<h[1-9]>")
+  prefix_start = []
+  def warn(s):
+    log_and_print(f'WARNING: on line {line_no}, with content\n{l}\n{s}')
+  for line_no in range(len(book_lines)):
+    l = book_lines[line_no]
+    ol_diff = l.count("<ol")-l.count("</ol>")
+    ul_diff = l.count("<ul")-l.count("</ul>")
+    table_diff = l.count("<table")-l.count("</table>")
+    if ((not any([ol_lvl,ul_lvl,table_lvl])) and (ol_diff > 0 or ul_diff > 0 or table_diff > 0 or headerpat.match(book_lines[line_no]) or book_lines[line_no][:3]=="<p>" or book_lines[line_no][:3]=="<hr>")):
+      prefix_start.append(line_no)
+    else:
+      prefix_start.append(prefix_start[-1])
+    ol_lvl += ol_diff
+    ul_lvl += ul_diff
+    table_lvl += table_diff
+    if l[:4]=="<h1>":
+      if l[-5:]!="</h1>":
+        warn("expecting entire line bracketed in <h1>..</h1>")
+      if args.numbered_chapters:
+        num = l.split()[1]
+        if num[-1] == ":":
+          num = num[:-1]
+        chap_no = int(num)
+      else:
+        chap_no += 1
+      sec_no = 0
+      ssec_no = 0
+      sssec_no = 0
+      ssssec_no = 0
+      this_location=f"Chapter {chap_no}"
+      locations.append(this_location)
+      log_and_print(f"found location {this_location}")
+      continue
+    if l[:4]=="<h2>":
+      if l[-5:]!="</h2>":
+        warn("expecting entire line bracketed in <h2>..</h2>")
+      if chap_no == 0:
+        nesting_warnings += 1
+        warn("Section without enclosing chapter")
+      sec_no += 1
+      ssec_no = 0
+      sssec_no = 0
+      ssssec_no = 0
+      this_location = f"{chap_no}.{sec_no}"
+      locations.append(this_location)
+      log_and_print(f"found location {this_location}")
+      continue
+    if l[:4]=="<h3>":
+      if l[-5:]!="</h3>":
+        warn("expecting entire line bracketed in <h3>..</h3>")
+      if sec_no == 0:
+        nesting_warnings += 1
+        if chap_no == 0:
+          warn("Subsection without enclosing chapter or section")
+        else:
+          warn("Subsection without enclosing section")
+      ssec_no += 1
+      sssec_no = 0
+      ssssec_no = 0
+      this_location = f"{chap_no}.{sec_no}.{ssec_no}"
+      locations.append(this_location)
+      log_and_print(f"found location {this_location}")
+      continue
+    if l[:4]=="<h4>":
+      if l[-5:]!="</h4>":
+        warn("expecting entire line bracketed in <h4>..</h4>")
+      if ssec_no ==0:
+        nesting_warnings += 1
+        if sec_no == 0:
+          if chap_no == 0:
+            warn("Subsubsection without enclosing chapter, section, or subsection")
+          else:
+            warn("Subsubsection without enclosing section or subsection")
+        else:
+          warn("Subsubsection without enclosing subsection")
+      sssec_no += 1
+      ssssec_no = 0
+      this_location = f"{chap_no}.{sec_no}.{ssec_no}.{sssec_no}"
+      locations.append(this_location)
+      log_and_print(f"found location {this_location}")
+      continue
+    if l[:4]=="<h5>":
+      if l[-5:]!="</h5>":
+        warn("expecting entire line bracketed in <h5>..</h5>")
+      if sssec_no == 0:
+        nesting_warnings += 1
+        if ssec_no == 0:
+          if sec_no == 0:
+            if chap_no == 0:
+              warn("Subsubsubsection without enclosing chapter, section, subsection, or subsubsection")
+            else:
+              warn("Subsubsubsection without enclosing section, subsection, or subsubsection")
+          else:
+            warn("Subsubsubsection without enclosing subsection or subsubsection")
+        else:
+          warn("Subsubsubsection without enclosing subsubsection")
+      ssssec_no += 1
+      this_location = f"{chap_no}.{sec_no}.{ssec_no}.{sssec_no}.{ssssec_no}"
+      locations.append(this_location)
+      log_and_print(f"found location {this_location}")
+      continue
+    locations.append(this_location)
+  if nesting_warnings:
+    #
+    # if there were any improper nestings, just quit ... should have used
+    # OOoutline first and fixed those issues!
+    #
+    if nesting_warnings >1:
+      log_and_print(f"Exiting: there were {nesting_warnings} improperly nested section warnings (use OOoutline to track them down and fix them before running OOfig_finder again, please!)")
+    if nesting_warnings == 1:
+      log_and_print(f"Exiting: there was an improperly nested section warning (use OOoutline to track it down and fix it before running OOfig_finder again, please!)")
+    quit()
+  #
+  # load a few variables then loop through the book looking for the caption line
+  # of each figure number
+  #
+  prefix_start.append(len(book_lines))
+  fig_info = []
+  fig_info_headers= ["Figure number", "section", "line number in source file", "figure type", "caption", "alt text if image", "image filename", "link URL", "link text", "image description link", "seems OK in B/W"]
+  fig_info.append(fig_info_headers)
+  ytlpat=re.compile("https?://(www.)?youtu(be.com|.be)/")
+  ytpat =re.compile("[yY]ou[tT]ube")
+  figures = 0
+  unknowns = 0
+  imgs = 0
+  img_descrips = 0
+  img_descrip_pat = re.compile("image desc", re.IGNORECASE)
+  multiple_imgs = 0
+  tables = 0
+  youtubes = 0
+  links = 0
+  if args.allow_subfig_letters:
+    figname_suffices = ['', 'a', 'b', 'c', 'd', 'e', 'f', 'g', 'h']
+  else:
+    figname_suffices = ['']
+  for i in range(1,args.Max_chap_no+1):
+    for j in range(1,args.max_fig_no+1):
+      for k in figname_suffices:
+        figname_pat=re.compile(f"<p>([fF]igure[s]? {i}\.{j}{k}(, [1-9][0-9]?\.[1-9][0-9]?[a-h]?)*((,)? and [1-9][0-9]?\.[1-9][0-9]?[a-h]?)?)[^0-9a-h]")
+        #
+        # having chosen a figure number and defined a patern to match, loop
+        # through the book looking for the corresponding caption line
+        #
+        line_no = 0
+        html_this_fig = []
+        while True:
+          line_no += 1
+          if line_no>=len(book_lines):
+            break
+          l = book_lines[line_no]
+          last = book_lines[line_no-1]
+          prefix = line_no-1
+          prefix_end = line_no-1
+          m=figname_pat.match(l)
+          if m:
+            #
+            # we've found the caption line!
+            #
+            urls=[]
+            log_and_print(f"found something for {m.group(1)}")
+            figures += 1
+            html_this_fig.append(last.replace('<img','<img width="50%"')+'\n')
+            html_this_fig.append(l+"\n")
+            soupl=BeautifulSoup(l)
+            atagsl=soupl.find_all("a",href=True)
+            souplast=BeautifulSoup(last)
+            atagslast=souplast.find_all("a",href=True)
+            if "<img" in last:
+              #
+              # the previous line had an <img> tag
+              #
+              if ytlpat.search(l):
+                #
+                # this line has a YouTube link, so the previous line's <img>
+                # was probably a thumbnail of the video
+                #
+                for atagl in atagsl:
+                  ytlm=ytlpat.match(atagl.get("href"))
+                  if ytlm:
+                    url=atagl.get("href")
+                    if not (url in urls):
+                      urls.append(url)
+                    fig_info.append([m.group(1), locations[line_no], line_no, "YT", l[3:-4], "", "", url, str(atagl.string), ""])
+                    youtubes += 1
+              else:
+                if ytlpat.search(last) or ytpat.search(last):
+                  #
+                  # or maybe the previous line was just a link to YouTube
+                  #
+                  if atagslast:
+                    for ataglast in atagslast:
+                      ytlm=ytlpat.match(ataglast.get("href"))
+                      if ytlm:
+                        url=ataglast.get("href")
+                        if not (url in urls):
+                          urls.append(url)
+                        fig_info.append([m.group(1), locations[line_no], line_no, "YT", l[3:-4], "", "", url, str(ataglast.string), ""])
+                        youtubes += 1
+                  else:
+                    if last[:8]=="<p><img ":
+                      lastalt=souplast.find("img").get("alt")
+                      ytllastaltm=ytlpat.match(lastalt)
+                      if ytllastaltm:
+                        if not(lastalt in urls):
+                          urls.append(lastalt)
+                        fig_info.append([m.group(1), locations[line_no], line_no, "YT", l[3:-4], "", "", lastalt, "", ""])
+                else:
+                  #
+                  # or the previous line should just have been some <img> tags
+                  #
+                  imslast=souplast.find_all("img")
+                  if len(imslast)>1:
+                    multiple_imgs += 1
+                  for imlast in imslast:
+                    ids = ''
+                    for atagl in atagsl:
+                      link_text=atagl.get_text()
+                      if img_descrip_pat.search(link_text):
+                        if ids:
+                          ids += ", "
+                        ids += atagl.get("href")
+                        img_descrips += 1
+                    if not ids and line_no<len(book_lines)-1:
+                      next = book_lines[line_no+1]
+                      if img_descrip_pat.search(next):
+                        soupnext=BeautifulSoup(next)
+                        atagsnext=soupnext.find_all("a",href=True)
+                        for atagnext in atagsnext:
+                          next_link_text=atagnext.get_text()
+                          if img_descrip_pat.search(next_link_text):
+                            if ids:
+                              ids += ", "
+                            ids += atagnext.get("href")
+                            img_descrips += 1
+                      if ids:
+                        html_this_fig.append(next+"\n")
+                        line_no += 1
+                    imgs += 1
+                    fig_info.append([m.group(1), locations[line_no], line_no, "img", l[3:-4], imlast.get("alt"), imlast.get("src"), "", "", ids])
+              break
+            if atagslast:
+              for ataglast in atagslast:
+                ytlm=ytlpat.match(ataglast.get("href"))
+                if ytlm:
+                  url=ataglast.get("href")
+                  if not (url in urls):
+                    urls.append(url)
+                    fig_info.append([m.group(1), locations[line_no], line_no, "YT", l[3:-4], "", "", url, str(ataglast.string), ""])
+                    youtubes += 1
+                else:
+                  url=ataglast.get("href")
+                  if not (url in urls):
+                    urls.append(url)
+                    fig_info.append([m.group(1), locations[line_no], line_no, "link", l[3:-4], "", "", url, str(ataglast.string), ""])
+                    links += 1
+              break
+            elif last=="</table>":
+              #
+              # or maybe the figure was just a table
+              #
+              tables += 1
+              fig_info.append([m.group(1), locations[line_no], line_no, "table", l[3:-4], "", "", "", "", ""])
+            elif ytlpat.match(last):
+              if not (last in urls):
+                urls.append(last)
+              fig_info.append([m.group(1), locations[line_no], line_no, "YT", l[3:-4], "", "", last,"", ""])
+              youtubes += 1
+            else:
+              #
+              # unrecognized figure type
+              #
+              fig_info.append([m.group(1), locations[line_no], line_no, "unknown", l[3:-4], "", "", "", "", ""])
+              unknowns += 1
+              break
+            break
+        if html_this_fig:
+          #
+          # if we did find something, we wil have it in this variable
+          #
+          html_out.write('<hr style="width:100%">\n<p>&nbsp;</p>\n')
+          if args.context:
+            html_out.writelines(prefixl.replace('<img','<img width="25%"').replace('<table','<table border="1px"')+"\n" for prefixl in book_lines[prefix_start[line_no-2]:line_no-1])
+          html_out.writelines(html_this_fig)
+          if args.context:
+            lnp = prefix_start[line_no+1]
+            ln = line_no
+            while True:
+              ln += 1
+              if ln>=len(book_lines):
+                break
+              if prefix_start[ln] == lnp:
+                html_out.write(book_lines[ln].replace('<img','<img width="25%"').replace('<table','<table border="1px"')+"\n")
+              else:
+                break
+        else:
+          log_and_print(f"found nothing for Figure {i}.{j}{k}")
+  #
+  # done searching for figures, print footer and summary info
+  #
+  html_out.write('<hr style="width:100%">\n<p>&nbsp;</p>\n')
+  html_out.write('<p>Please note that the material on this page <b>is not by Jonathan Poritz</b> but is instead by various Open Oregon Educational Resources authors, and those authors (or their employers) are the rightsholders and have chosen the copyright status of their work.  Excerpts are posted here with the permission of Open Oregon Educaitonal Resources and are only for OOER internal use.</p>\n')
+  html_out.write(f"<p>{when_work} at {time.strftime('%H:%M:%S')}, did {what_work}</p>\n")
+  html_out.write(f'''<p>among {figures} figures, found</p>
+  <ul>
+   <li>{imgs} images
+    <ul>
+     <li>
+       among which {multiple_imgs} multiple imags
+     </li>
+     <li>
+       {img_descrips} image description file links
+     </li>
+    </ul>
+   </li>
+   <li>
+    {youtubes} YT references
+   </li>
+   <li>
+    {tables} tables
+   </li>
+   <li>
+    {links} links
+   </li>
+   <li>
+    {unknowns} unknowns
+   </li>
+  </ul>
+  ''') 
+  html_out.write("</body>\n</html>\n")
+with open(out_fn_base+".csv","w",newline="") as csv_out_fh:
+  csv_writer = csv.writer(csv_out_fh)
+  csv_writer.writerows(fig_info)
+log_and_print(f'''among {figures} figures, found
+ {imgs} images
+   among which {multiple_imgs} multiple images
+   {img_descrips} image description file links
+ {youtubes} YT references
+ {tables} tables
+ {links} links
+ {unknowns} unknowns''')
+log_and_print("Done (on "+time.strftime('%d/%m/%Y')+")!")
+args.logfile.write("------------------------------------\n")
+args.logfile.close()
