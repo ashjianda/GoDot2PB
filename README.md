@@ -32,15 +32,17 @@ If the path is not included, follow these remaining steps:
 ### Install packages
 
 Next, ensure all supporting packages are installed successfully (full list can be found at https://poritz.net/jonathan/share/GoDot2P/)
-* all packages should be included by default, except beautifulsoup4, requests, and selenium. To add these, run the following in your terminal
+* all packages should be included by default, except a few. To add these, run the following in your terminal
 *     pip install beautifulsoup4
       pip install requests
       pip install selenium
 
-
 ## Download the repo as a ZIP
 
 Click the green "<> Code" dropdown to download the code as a ZIP. Unzip the folder in your location of choice
+
+* To install tidy, navigate to https://binaries.html-tidy.org/ and download the recent version for your operating system. Make sure to install the package in the same directory as the code files from this repository. If you're using windows, download the .msi version to automatically set Path variables
+* To install pandoc, navigate to https://github.com/jgm/pandoc/releases/tag/3.2 and download the recent version for your operating system. Make sure to install the package in the same directory as the code files from this repository. If you're using windows, download the .msi version to automatically set Path variables
 
 ## Export your Google Doc
 
@@ -60,6 +62,8 @@ Run the following commands in the terminal
 
     python OOprep -v -b "cX cY" book.html
     python OOoutliner -n -t tidy_book.html
+
+If OOoutliner gave you warnings, that means there are structural issues with your headers in the html. Fix the warnings and try again!
 
 ### Images
 
