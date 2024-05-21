@@ -44,6 +44,8 @@ Click the green "<> Code" dropdown to download the code as a ZIP. Unzip the fold
 * To install tidy, navigate to https://binaries.html-tidy.org/ and download the recent version for your operating system. Make sure to install the package in the same directory as the code files from this repository. If you're using windows, download the .msi version to automatically set Path variables
 * To install pandoc, navigate to https://github.com/jgm/pandoc/releases/tag/3.2 and download the recent version for your operating system. Make sure to install the package in the same directory as the code files from this repository. If you're using windows, download the .msi version to automatically set Path variables
 
+Restart your computer before moving forward
+
 ## Export your Google Doc
 
 Download your Google Doc as a web page (File -> Download -> Webpage)
