@@ -8,8 +8,31 @@ Copy the following line and paste into your command line terminal to check if py
 
 If not, navigate to https://www.python.org/downloads/ to download the latest version
 
+### Set pip system path
+
+To check if the system path was added, run the following command
+
+    echo %PATH%
+
+Look for a path similar to C:\Users\<YourUsername>\AppData\Local\Programs\Python\PythonXX\Scripts\
+
+If the path is not included, follow these remaining steps:
+
+1. Run “start %APPDATA%” in the terminal
+3. A folder should open called "Roaming." Click the up arrow to go to the parent folder called AppData.
+4. Go to Local, then Programs, then Python, then Python###, then Scripts
+5. Copy this path
+6. In the taskbar search menu, search for "View Advanced System Settings"
+7. Click "Environment Variables" in the bottom right
+8. In the upper box, click on "Path" so that it is highlighted blue
+9. Click the edit button beneath the upper window, click new, and paste in the path copied earlier
+10. Click "Ok" on all 3 windows to exit out of the environment variables tab
+11. Close and reopen your terminal
+
+### Install packages
+
 Next, ensure all supporting packages are installed successfully (full list can be found at https://poritz.net/jonathan/share/GoDot2P/)
-* all packages should be included by default, except beautifulsoup4, requests, and selenium. to add these, run the following in your terminal
+* all packages should be included by default, except beautifulsoup4, requests, and selenium. To add these, run the following in your terminal
 *     pip install beautifulsoup4
       pip install requests
       pip install selenium
