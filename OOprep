@@ -173,6 +173,12 @@ for x in soup.find_all(text=True):
   x.replace_with(x.replace("\xa0", ""))
   nbsp += 1
 
+#
+# fix apostrophe
+#
+for x in soup.find_all(text=True):
+  x.replace_with(x.replace("’", "'"))
+
 for i in soup.contents:
   print(i)
 #
