@@ -80,6 +80,8 @@ Copy the contents of the tidy_book.html file and paste into the Pressbooks text 
 
 # Acknowledgements
 
+Modified by Damian Ashjian for compatibility with Windows OS. Modified from:
+
 Copyright (C) 2023 Jonathan A. Poritz
  
 This program is free software: you can redistribute it and/or modify
